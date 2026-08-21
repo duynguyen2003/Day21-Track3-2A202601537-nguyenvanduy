@@ -32,7 +32,8 @@ def check(name: str, status: str, detail: str = "") -> None:
 
 
 def _sha(path: pathlib.Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    raw = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()[:16]
 
 
 def _load_json(path: pathlib.Path):
@@ -76,9 +77,19 @@ def smoke() -> None:
 
     # NOTE: pyproject sets addopts="-q". Passing -q again yields -qq, which hides the
     # summary line. Use -rN + --tb=no and let the configured -q stand.
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", str(ROOT / "tests"), "--tb=no", "-rN"],
-        capture_output=True, text=True, cwd=ROOT)
+    # Try sys.executable -m pytest first, fallback to `pytest` binary in PATH
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", str(ROOT / "tests"), "--tb=no", "-rN"],
+            capture_output=True, text=True, cwd=ROOT)
+        if proc.returncode != 0 and "No module named pytest" in (proc.stdout or proc.stderr):
+            proc = subprocess.run(
+                ["pytest", str(ROOT / "tests"), "--tb=no", "-rN"],
+                capture_output=True, text=True, cwd=ROOT)
+    except Exception:
+        proc = subprocess.run(
+            ["pytest", str(ROOT / "tests"), "--tb=no", "-rN"],
+            capture_output=True, text=True, cwd=ROOT)
     lines = [l.strip() for l in (proc.stdout or proc.stderr).splitlines() if l.strip()]
     # The last line may be pytest's progress dots; the summary is the line that reports
     # counts. Search backwards for it rather than assuming position.
